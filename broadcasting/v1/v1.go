@@ -1,29 +1,34 @@
 package v1
 
 import (
-	"context"
-	broadcastingpb "github.com/strideynet/go-play/broadcasting/proto"
 	"sync"
 )
 
+// bufferSize dictates the size of the channels returned by Subscribe.
 const bufferSize = 16
 
 type BroadcastManager struct {
-	sync.Mutex
+	// Single mutex to synchronise access to subs map
+	sync.RWMutex
+	// Whilst this could be a slice, it's significantly cleaner for us to do this as a map since we can easily remove
+	// elements by a reference, rather than having to iterate through a slice to find said element.
 	subs map[chan string]struct{}
 }
 
+// New returns a new BroadcastManager with its fields
 func New() *BroadcastManager {
 	return &BroadcastManager{
-		Mutex: sync.Mutex{},
-		subs:  make(map[chan string]struct{}),
+		RWMutex: sync.RWMutex{},
+		subs:    make(map[chan string]struct{}),
 	}
 }
 
 func (b *BroadcastManager) Broadcast(text string) {
-	b.Lock()
-	defer b.Unlock()
+	b.RLock()
+	defer b.RUnlock()
 
+	// DANGER! If one of these channels is full, and its consumer isn't consuming, this is going to lead to the entire
+	// function blocking.
 	for ch := range b.subs {
 		ch <- text
 	}
@@ -44,32 +49,5 @@ func (b *BroadcastManager) Subscribe() (chan string, func()) {
 		defer b.Unlock()
 
 		delete(b.subs, ch)
-	}
-}
-
-type Service struct {
-	broadcastingpb.UnimplementedBroadcastServer
-	bm *BroadcastManager
-}
-
-func (s *Service) Send(ctx context.Context, req *broadcastingpb.SendRequest) (*broadcastingpb.SendResponse, error) {
-	s.bm.Broadcast(req.Message)
-
-	return &broadcastingpb.SendResponse{}, nil
-}
-
-func (s *Service) Subscribe(req *broadcastingpb.SubscribeRequest, ss broadcastingpb.Broadcast_SubscribeServer) error {
-	ch, cancel := s.bm.Subscribe()
-	defer cancel()
-
-	for {
-		select {
-		case <-ss.Context().Done():
-			break
-		case msg := <-ch:
-			if err := ss.Send(&broadcastingpb.SubscribeResponse{Message: msg}); err != nil {
-				return err
-			}
-		}
 	}
 }
