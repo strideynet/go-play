@@ -1,0 +1,21 @@
+syntax = "proto3";
+option go_package = "github.com/strideynet/go-play/broadcasting/proto;broadcastingpb";
+
+package broadcasting;
+
+service Broadcast {
+  rpc Send(SendRequest) returns (SendResponse){}
+  rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse){}
+}
+
+message SendRequest {
+  string message = 1;
+}
+
+message SendResponse {}
+
+message SubscribeRequest {}
+message SubscribeResponse {
+  string message = 1;
+}
+
